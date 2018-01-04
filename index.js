@@ -1,5 +1,13 @@
 'use strict';
 
+const goodReadsJSONResponse = require('goodreads-json-api');
+const https = require('https');
+
+const messages = require('./messages');
+const alexaLogger = require('./logger');
+
+const GOODREADS_KEY = process.env.GOODREADS_KEY;
+
  /**
   * This sample demonstrates an implementation of the Lex Code Hook Interface
   * in order to serve a sample bot which manages orders for flowers.
@@ -47,71 +55,6 @@ function delegate(sessionAttributes, slots) {
     };
 }
 
-// ---------------- Helper Functions --------------------------------------------------
-
-function parseLocalDate(date) {
-    /**
-     * Construct a date object in the local timezone by parsing the input date string, assuming a YYYY-MM-DD format.
-     * Note that the Date(dateString) constructor is explicitly avoided as it may implicitly assume a UTC timezone.
-     */
-    const dateComponents = date.split(/\-/);
-    return new Date(dateComponents[0], dateComponents[1] - 1, dateComponents[2]);
-}
-
-function isValidDate(date) {
-    try {
-        return !(isNaN(parseLocalDate(date).getTime()));
-    } catch (err) {
-        return false;
-    }
-}
-
-function buildValidationResult(isValid, violatedSlot, messageContent) {
-    if (messageContent == null) {
-        return {
-            isValid,
-            violatedSlot,
-        };
-    }
-    return {
-        isValid,
-        violatedSlot,
-        message: { contentType: 'PlainText', content: messageContent },
-    };
-}
-
-function validateOrderFlowers(flowerType, date, time) {
-    const flowerTypes = ['lilies', 'roses', 'tulips'];
-    if (flowerType && flowerTypes.indexOf(flowerType.toLowerCase()) === -1) {
-        return buildValidationResult(false, 'FlowerType', `We do not have ${flowerType}, would you like a different type of flower?  Our most popular flowers are roses`);
-    }
-    if (date) {
-        if (!isValidDate(date)) {
-            return buildValidationResult(false, 'PickupDate', 'I did not understand that, what date would you like to pick the flowers up?');
-        }
-        if (parseLocalDate(date) < new Date()) {
-            return buildValidationResult(false, 'PickupDate', 'You can pick up the flowers from tomorrow onwards.  What day would you like to pick them up?');
-        }
-    }
-    if (time) {
-        if (time.length !== 5) {
-            // Not a valid time; use a prompt defined on the build-time model.
-            return buildValidationResult(false, 'PickupTime', null);
-        }
-        const hour = parseInt(time.substring(0, 2), 10);
-        const minute = parseInt(time.substring(3), 10);
-        if (isNaN(hour) || isNaN(minute)) {
-            // Not a valid time; use a prompt defined on the build-time model.
-            return buildValidationResult(false, 'PickupTime', null);
-        }
-        if (hour < 10 || hour > 16) {
-            // Outside of business hours
-            return buildValidationResult(false, 'PickupTime', 'Our business hours are from ten a m. to five p m. Can you specify a time during this range?');
-        }
-    }
-    return buildValidationResult(true, null, null);
-}
-
  // --------------- Functions that control the bot's behavior -----------------------
 
 /**
@@ -121,51 +64,113 @@ function validateOrderFlowers(flowerType, date, time) {
  * in slot validation and re-prompting.
  *
  */
-function orderFlowers(intentRequest, callback) {
-    const flowerType = intentRequest.currentIntent.slots.FlowerType;
-    const date = intentRequest.currentIntent.slots.PickupDate;
-    const time = intentRequest.currentIntent.slots.PickupTime;
-    const source = intentRequest.invocationSource;
-
-    if (source === 'DialogCodeHook') {
-        // Perform basic validation on the supplied input slots.  Use the elicitSlot dialog action to re-prompt for the first violation detected.
-        const slots = intentRequest.currentIntent.slots;
-        const validationResult = validateOrderFlowers(flowerType, date, time);
-        if (!validationResult.isValid) {
-            slots[`${validationResult.violatedSlot}`] = null;
-            callback(elicitSlot(intentRequest.sessionAttributes, intentRequest.currentIntent.name, slots, validationResult.violatedSlot, validationResult.message));
-            return;
-        }
-
-        // Pass the price of the flowers back through session attributes to be used in various prompts defined on the bot model.
-        const outputSessionAttributes = intentRequest.sessionAttributes || {};
-        if (flowerType) {
-            outputSessionAttributes.Price = flowerType.length * 5; // Elegant pricing model
-        }
-        callback(delegate(outputSessionAttributes, intentRequest.currentIntent.slots));
-        return;
-    }
-
-    // Order the flowers, and rely on the goodbye message of the bot to define the message to the end user.  In a real bot, this would likely involve a call to a backend service.
-    callback(close(intentRequest.sessionAttributes, 'Fulfilled',
-    { contentType: 'PlainText', content: `Thanks, your order for ${flowerType} has been placed and will be ready for pickup by ${time} on ${date}` }));
+function getBookDescription(intentRequest, callback) {
+    handleBookInfoRequest(intentRequest, callback);
 }
 
+function generateEndPointAndCardTitle (book, author) {
+    const resp = {};
+    resp.API = 'https://www.goodreads.com/book/title.xml';
+    if (author) {
+      resp.API += `?author${author}&key=${GOODREADS_KEY}&title=${book}`;
+    } else {
+      resp.API += `?key=${GOODREADS_KEY}&title=${book}`;
+    }
+    return resp;
+  };
+
+function handleBookInfoRequest (intentRequest, callback) {
+    const author = intentRequest.currentIntent.slots.AuthorName;
+    const book = intentRequest.currentIntent.slots.BookName;
+    const source = intentRequest.invocationSource;
+    alexaLogger.logInfo(`Author: ${author}, Book: ${book}`);
+    
+    const {
+          API
+    } = generateEndPointAndCardTitle(book, author);
+    alexaLogger.logInfo(`Endpoint generated: ${API}`);
+    https.get(API, (res) => {
+      const options = {
+        xml: {
+          normalizeWhitespace: true
+        }
+      };
+      const statusCode = res.statusCode;
+      const contentType = res.headers['content-type'];
+      let error;
+      if (statusCode !== 200) {
+        error = new Error('Request Failed.\n' +
+                  `Status Code: ${statusCode}`);
+      }
+      /**
+       * In case statusCode is not 200
+       */
+      if (error) {
+        alexaLogger.logError(error.message);
+        // consume response data to free up memory
+        res.resume();
+      }
+  
+      res.setEncoding('utf8');
+      let rawData = '';
+      res.on('data', chunk => rawData += chunk);
+      res.on('end', () => {
+        try {
+          /* JSON response converted from Goodreads XML response */
+          const resp = goodReadsJSONResponse.convertToJson(rawData);
+          const {
+              popular_shelves, book, author
+          } = resp;
+          intentRequest.sessionAttributes.book = book;
+          const speechOutput = `${book.title} from ${author.name} was published in ${book.publication_year} by publisher ${book.publisher}. `
+                + `It consists of ${book.num_pages} pages. `
+                + `Its average rating on Goodreads is ${book.average_rating} from ${book.ratings_count} ratings. `
+                + `Do you want to listen to a brief description of ${book.title}? `;
+          return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
+            { contentType: 'PlainText', content: speechOutput }));
+    
+        } catch (e) {
+          alexaLogger.logError(e.message);
+        }
+      });
+    }).on('error', (e) => {
+      alexaLogger.logError(`Got error: ${e.message}`);
+    });
+  };
  // --------------- Intents -----------------------
 
 /**
  * Called when the user specifies an intent for this skill.
  */
 function dispatch(intentRequest, callback) {
-    console.log(`dispatch userId=${intentRequest.userId}, intentName=${intentRequest.currentIntent.name}`);
+    alexaLogger.logInfo(`dispatch userId=${intentRequest.userId}, intentName=${intentRequest.currentIntent.name}`);
 
     const intentName = intentRequest.currentIntent.name;
 
     // Dispatch to your skill's intent handlers
-    if (intentName === 'OrderFlowers') {
-        return orderFlowers(intentRequest, callback);
+    if (intentName === 'GetBookDescription') {
+        return getBookDescription(intentRequest, callback);
+    } else if (intentName === 'GoodbyeIntent') {
+        return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
+            { contentType: 'PlainText', content: messages.messageGoodBye }));
+    } else if (intentName === 'GreetingIntent') {
+        return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
+            { contentType: 'PlainText', content: messages.messageGreeting }));
+    } else if (intentName === 'HelpmeIntent') {
+        return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
+            { contentType: 'PlainText', content: messages.messageHelp }));
+    } else if (intentName === 'YesDescriptionIntent') {
+        if (intentRequest.sessionAttributes.book.description)
+            return callback(intentRequest.sessionAttributes.book.description);
+        else 
+            return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
+            { contentType: 'PlainText', content: messages.messageInvalidRequest }));
+    } else if (intentName === 'NoDescriptionIntent') {
+        return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
+            { contentType: 'PlainText', content: messages.messageGoodBye }));
     }
-    throw new Error(`Intent with name ${intentName} not supported`);
+    return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
+            { contentType: 'PlainText', content: messages.messageInvalidRequest }));
 }
 
 // --------------- Main handler -----------------------
@@ -176,7 +181,7 @@ exports.handler = (event, context, callback) => {
     try {
         // By default, treat the user request as coming from the America/New_York time zone.
         process.env.TZ = 'America/New_York';
-        console.log(`event.bot.name=${event.bot.name}`);
+        alexaLogger.logInfo(`event.bot.name=${event.bot.name}`);
 
         /**
          * Uncomment this if statement and populate with your Lex bot name and / or version as
