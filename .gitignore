@@ -56,4 +56,9 @@ typings/
 
 # dotenv environment variables file
 .env
+deploy.env
+event.json
+package-lock.json
 
+.lambda/
+build/

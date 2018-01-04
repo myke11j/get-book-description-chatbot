@@ -1,0 +1,41 @@
+{
+  "name": "get-book-description-chatbot",
+  "version": "1.0.0",
+  "description": "AWS Lex chatbot for getting books descrription Edit",
+  "main": "index.js",
+  "dependencies": {
+    "goodreads-json-api": "^1.0.4",
+    "winston": "^2.4.0",
+    "winston-papertrail": "^1.0.5"
+  },
+  "devDependencies": {
+    "eslint": "^3.19.0",
+    "eslint-config-airbnb": "^15.0.1",
+    "eslint-plugin-import": "^2.3.0",
+    "eslint-plugin-jsx-a11y": "^5.0.3",
+    "eslint-plugin-meteor": "^4.0.1",
+    "eslint-plugin-react": "^7.0.1",
+    "sinon": "^2.4.1"
+  },
+  "scripts": {
+    "test": "npm test",
+    "dev": "node-lambda run",
+    "deploy": "node-lambda deploy",
+    "lint": "eslint './*.js'",
+    "lintfix": "eslint --fix './*.js'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/myke11j/get-book-description-chatbot.git"
+  },
+  "keywords": [
+    "lex",
+    "chatbot"
+  ],
+  "author": "Mukul <@mukul1904>",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/myke11j/get-book-description-chatbot/issues"
+  },
+  "homepage": "https://github.com/myke11j/get-book-description-chatbot#readme"
+}
