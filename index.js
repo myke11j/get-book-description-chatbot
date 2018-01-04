@@ -121,8 +121,8 @@ function handleBookInfoRequest (intentRequest, callback) {
           const {
               popular_shelves, book, author
           } = resp;
-          intentRequest.sessionAttributes.book = book;
-          const speechOutput = `${book.title} from ${author.name} was published in ${book.publication_year} by publisher ${book.publisher}. `
+          intentRequest.sessionAttributes.description = book.description;
+          const speechOutput = `${book.title} from ${author.name} was published in ${book.publication_year} by publisher    ${book.publisher}. `
                 + `It consists of ${book.num_pages} pages. `
                 + `Its average rating on Goodreads is ${book.average_rating} from ${book.ratings_count} ratings. `
                 + `Do you want to listen to a brief description of ${book.title}? `;
@@ -150,27 +150,28 @@ function dispatch(intentRequest, callback) {
     // Dispatch to your skill's intent handlers
     if (intentName === 'GetBookDescription') {
         return getBookDescription(intentRequest, callback);
-    } else if (intentName === 'GoodbyeIntent') {
+    } else if (intentName === 'ByeIntent') {
         return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
-            { contentType: 'PlainText', content: messages.messageGoodBye }));
-    } else if (intentName === 'GreetingIntent') {
+            { contentType: 'PlainText', content: messages.messageGoodBye() }));
+    } else if (intentName === 'HiIntent') {
         return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
-            { contentType: 'PlainText', content: messages.messageGreeting }));
+            { contentType: 'PlainText', content: messages.messageGreeting() }));
     } else if (intentName === 'HelpmeIntent') {
         return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
-            { contentType: 'PlainText', content: messages.messageHelp }));
+            { contentType: 'PlainText', content: messages.messageHelp() }));
     } else if (intentName === 'YesDescriptionIntent') {
-        if (intentRequest.sessionAttributes.book.description)
-            return callback(intentRequest.sessionAttributes.book.description);
-        else 
+        if (intentRequest.sessionAttributes.description)
             return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
-            { contentType: 'PlainText', content: messages.messageInvalidRequest }));
+            { contentType: 'PlainText', content: intentRequest.sessionAttributes.description }));
+        else
+            return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
+            { contentType: 'PlainText', content: messages.messageInvalidRequest() }));
     } else if (intentName === 'NoDescriptionIntent') {
         return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
-            { contentType: 'PlainText', content: messages.messageGoodBye }));
+            { contentType: 'PlainText', content: messages.messageGoodBye() }));
     }
     return callback(close(intentRequest.sessionAttributes, 'Fulfilled',
-            { contentType: 'PlainText', content: messages.messageInvalidRequest }));
+            { contentType: 'PlainText', content: messages.messageInvalidRequest() }));
 }
 
 // --------------- Main handler -----------------------
